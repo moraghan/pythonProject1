@@ -10,6 +10,7 @@ from helpers import get_db_connection, get_api_key, get_request_types
 
 Base = declarative_base()
 
+
 class TMDBRequest(Base):
     __tablename__ = 'tmdb_requests'
 
@@ -19,6 +20,7 @@ class TMDBRequest(Base):
     request_text = Column(String(100), nullable=False)
     response_json = Column(JSONB)
     __table_args__ = (UniqueConstraint('request_key', 'request_type', name='request_key_type_UK'),)
+
 
 request_type = 'person'
 
@@ -32,7 +34,6 @@ API_KEY = get_api_key()
 request_url = REQUEST_TYPE_INFO[request_type].URL
 current_key = 100
 
-
 with Session(engine) as session:
     while current_key <= 100000:
 
@@ -40,21 +41,23 @@ with Session(engine) as session:
                                              TMDBRequest.request_type == request_type).first() is None:
             enriched_url = request_url.replace('{api_key}', API_KEY).replace('{id}', str(current_key))
 
+            print(f'Retrieving data from {enriched_url}')
             _response_data = requests.get(enriched_url)
 
             if _response_data.status_code == 200:
                 response_data = json.loads(_response_data.text)
 
-                request_1 = TMDBRequest(request_type=request_type,
-                                    request_text=enriched_url,
-                                    request_key=current_key,
-                                    response_json=response_data)
+                TMDB_request_to_add = TMDBRequest(request_type=request_type,
+                                                  request_text=enriched_url,
+                                                  request_key=current_key,
+                                                  response_json=response_data)
 
-                session.add(request_1)
+                session.add(TMDB_request_to_add)
                 session.commit()
             else:
-                response_data = 'Error'
-
+                print(f'Data Retrieval error {_response_data.status_code}')
+        else:
+            print(f'Data has already been retrieved for type {request_type} with key {current_key}')
         current_key = current_key + 1
-        print(current_key)
-session.commit()
+
+session.close()
