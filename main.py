@@ -1,9 +1,10 @@
 import requests
+import argparse
 import json
 from sqlalchemy import Column, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func
 from sqlalchemy.orm import Session
 
 from helpers import get_db_connection, get_api_key, get_request_types
@@ -22,42 +23,61 @@ class TMDBRequest(Base):
     __table_args__ = (UniqueConstraint('request_key', 'request_type', name='request_key_type_UK'),)
 
 
-request_type = 'person'
+def main(request_type):
+    DB_URL = get_db_connection()
+    engine = create_engine(DB_URL)
+    Base.metadata.create_all(engine)
 
-DB_URL = get_db_connection()
-engine = create_engine(DB_URL)
-Base.metadata.create_all(engine)
+    request_type_info = get_request_types()
+    api_key = get_api_key()
 
-REQUEST_TYPE_INFO = get_request_types()
-API_KEY = get_api_key()
+    request_url = request_type_info[request_type].URL
+    max_request_key = request_type_info[request_type].MAX_REQUEST_KEY
 
-request_url = REQUEST_TYPE_INFO[request_type].URL
-current_key = 100
+    with Session(engine) as session:
 
-with Session(engine) as session:
-    while current_key <= 100000:
+        _last_key_request = session.query(
+            func.max(TMDBRequest.request_key).filter(TMDBRequest.request_type == request_type)).one()[0]
 
-        if session.query(TMDBRequest).filter(TMDBRequest.request_key == current_key,
-                                             TMDBRequest.request_type == request_type).first() is None:
-            enriched_url = request_url.replace('{api_key}', API_KEY).replace('{id}', str(current_key))
-
-            print(f'Retrieving data from {enriched_url}')
-            _response_data = requests.get(enriched_url)
-
-            if _response_data.status_code == 200:
-                response_data = json.loads(_response_data.text)
-
-                TMDB_request_to_add = TMDBRequest(request_type=request_type,
-                                                  request_text=enriched_url,
-                                                  request_key=current_key,
-                                                  response_json=response_data)
-
-                session.add(TMDB_request_to_add)
-                session.commit()
-            else:
-                print(f'Data Retrieval error {_response_data.status_code}')
+        if _last_key_request is None:
+            current_key = 1
         else:
-            print(f'Data has already been retrieved for type {request_type} with key {current_key}')
-        current_key = current_key + 1
+            current_key = int(_last_key_request) + 1
 
-session.close()
+        while current_key <= max_request_key:
+
+            if session.query(TMDBRequest).filter(TMDBRequest.request_key == current_key,
+                                                 TMDBRequest.request_type == request_type).first() is None:
+                enriched_url = request_url.replace('{api_key}', api_key).replace('{id}', str(current_key))
+
+                print(f'Retrieving data for request type {request_type} and key {current_key}')
+                _response_data = requests.get(enriched_url)
+
+                if _response_data.status_code == 200:
+                    response_data = json.loads(_response_data.text)
+
+                    TMDB_request_to_add = TMDBRequest(request_type=request_type,
+                                                      request_text=enriched_url,
+                                                      request_key=current_key,
+                                                      response_json=response_data)
+
+                    session.add(TMDB_request_to_add)
+                    session.commit()
+                else:
+                    print(f'Data Retrieval error {_response_data.status_code}')
+            else:
+                print(f'Data has already been retrieved for type {request_type} with key {current_key}')
+
+            current_key = current_key + 1
+
+    session.close()
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Extract movie and person details from TMDB', prog='Main',
+                                     usage='%(prog)s [options] request_type')
+    parser.add_argument('request_type', type=str, help='Request Type: Either movie or person',
+                        choices=['movie', 'person'], default='person')
+    args = parser.parse_args()
+    print(args)
+    main('movie')
