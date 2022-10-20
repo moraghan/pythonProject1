@@ -11,6 +11,14 @@ from helpers import get_db_connection, get_api_key, get_request_types
 
 Base = declarative_base()
 
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:20.0) Gecko/20100101 Firefox/20.0",
+    "Accept-Encoding": "gzip, deflate",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
+    "Connection": "keep-alive"
+}
+
 
 class TMDBRequest(Base):
     __tablename__ = 'tmdb_requests'
@@ -49,22 +57,24 @@ def main(request_type):
             if session.query(TMDBRequest).filter(TMDBRequest.request_key == current_key,
                                                  TMDBRequest.request_type == request_type).first() is None:
                 enriched_url = request_url.replace('{api_key}', api_key).replace('{id}', str(current_key))
-
+                print(enriched_url)
                 print(f'Retrieving data for request type {request_type} and key {current_key}')
-                _response_data = requests.get(enriched_url)
 
-                if _response_data.status_code == 200:
-                    response_data = json.loads(_response_data.text)
+                try:
+                    _response_data = requests.get(enriched_url, headers=headers)
 
-                    TMDB_request_to_add = TMDBRequest(request_type=request_type,
-                                                      request_text=enriched_url,
-                                                      request_key=current_key,
-                                                      response_json=response_data)
+                    if _response_data.status_code == 200:
+                        response_data = json.loads(_response_data.text)
 
-                    session.add(TMDB_request_to_add)
-                    session.commit()
-                else:
-                    print(f'Data Retrieval error {_response_data.status_code}')
+                        TMDB_request_to_add = TMDBRequest(request_type=request_type,
+                                                          request_text=enriched_url,
+                                                          request_key=current_key,
+                                                          response_json=response_data)
+
+                        session.add(TMDB_request_to_add)
+                        session.commit()
+                except requests.exceptions.RequestException as e:
+                    print(f'**ERROR Retrieving data for request type {request_type} with key {current_key}')
             else:
                 print(f'Data has already been retrieved for type {request_type} with key {current_key}')
 
@@ -77,7 +87,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Extract movie and person details from TMDB', prog='Main',
                                      usage='%(prog)s [options] request_type')
     parser.add_argument('request_type', type=str, help='Request Type: Either movie or person',
-                        choices=['movie', 'person'], default='person')
+                        choices=['movie', 'person', 'company', 'credit'], default='person')
     args = parser.parse_args()
     print(args)
-    main('movie')
+    main(args.request_type)
