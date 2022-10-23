@@ -13,13 +13,22 @@ country_code char(2) primary key,
 country_descr varchar(100)
 );
 
+drop table company;
+
 create table if not exists company
 (
-company_id integer primary key,
-company_descr varchar(100),
-logo_path  text null,
-country_origin  char(2)
+id                integer,
+title             text,
+homepage          text,
+logo_path         text,
+headquarters      text,
+origin_country    char(2),
+parent_company_id integer
 );
+
+alter table company
+    owner to moraghan;
+
 
 insert into collection
 (
@@ -27,7 +36,7 @@ collection_id,
 collection_descr,
 collection_poster_path,
 backdrop_poster_path
-)
+);
 
 select distinct (response_json -> 'belongs_to_collection' ->> 'id')::int as collection_id,
                 response_json -> 'belongs_to_collection' ->> 'name' as collection_descr,
@@ -70,39 +79,28 @@ select distinct jsonb_array_elements(response_json -> 'belongs_to_collection'::t
 from tmdb_requests
 where request_type = 'movie'
 
-drop table if exists company
-
-create table company
-(
-    id             integer,
-    title          varchar(100),
-    homepage       text,
-    logo_path      text,
-    description    text,
-    headquarters   text,
-    origin_country text,
-    parent_company text
-);
-
-alter table company
-    owner to moraghan;
-
 
 insert into company
+(
+id,
+title,
+homepage,
+logo_path,
+headquarters,
+origin_country,
+parent_company_id
+)
 select request_key as id,
        response_json->>'name' as title,
        response_json->>'homepage'  as homepage,
        response_json->>'logo_path' as logo_path,
-       response_json->>'description' as description,
        response_json->>'headquarters' as headquarters,
        response_json->>'origin_country' as origin_country,
-       response_json->>'parent_company' as parent_company
+       (response_json -> 'parent_company' ->> 'id')::int as parent_company_id
+from   tmdb_requests
+where  request_type = 'company';
 
-from tmdb_requests
-where request_type = 'company' and response_status_code = 200
 
-delete from tmdb_requests where request_type = 'country'
-and response_status_code = 200
 
 drop table if exists country
 
